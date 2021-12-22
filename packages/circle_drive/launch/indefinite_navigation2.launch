@@ -4,30 +4,25 @@
   <arg name="demo_name" value="indefinite_navigation"/>
   <arg name="verbose" default="true"/>
 
-	<group ns="$(arg veh)">
-                <remap from="circle_drive/car_cmd" to="joy_mapper_node/car_cmd"/>
-                <node name="circle_drive" pkg="circle_drive" type="circle_drive.py" output="screen" required="true"/>
-	</group>
-
 	<!-- start basic args -->
 	<include file="$(find duckietown_demos)/launch/master.launch">
 		<!-- Basic parameters -->
 		<arg name="veh" value="$(arg veh)"/>
         <arg name="demo_name" value="$(arg demo_name)"/>
 		<arg name="param_file_name" default="default" />
-		<arg name="visualization" value="true" />
+		<arg name="visualization" value="false" />
 
         <!-- Finite state machine -->
         <arg name="fsm" value="true"/>
         <arg name="/fsm/logic_gate" value="true"/>
 		<!-- Basic functionalities -->
 		<arg name="line_detector_param_file_name" default="default" />
-		<arg name="anti_instagram" default="true" />
+		<arg name="anti_instagram" default="false" />
 		<arg name="/camera/raw" value="true"/>
 		<arg name="/camera/rect" value="true"/>
-		<arg name="LED" value="true"/>
-		<arg name="/LED/detector" value="true"/>
-		<arg name="/LED/pattern_switch" value="true"/>
+		<arg name="LED" value="false"/>
+		<arg name="/LED/detector" value="false"/>
+		<arg name="/LED/pattern_switch" value="false"/>
 
         <!-- Lane Following stack -->
         <arg name="lane_following" value="true"/>
@@ -38,10 +33,10 @@
         <arg name="/lane_following/stop_line_filter" value="true"/>
 
         <!-- Vehicle avoidance stack -->
-        <arg name="vehicle_avoidance" value="true"/>
-        <arg name="/vehicle_avoidance/detection" value="true" />
-        <arg name="/vehicle_avoidance/filter" value="true" />
-        <arg name="/vehicle_avoidance/control" value="true"/>
+        <arg name="vehicle_avoidance" value="false"/>
+        <arg name="/vehicle_avoidance/detection" value="false" />
+        <arg name="/vehicle_avoidance/filter" value="false" />
+        <arg name="/vehicle_avoidance/control" value="false"/>
                 
 		<!-- Intersection arguments -->
 		<arg name="unicorn_intersection" value="true"/>
