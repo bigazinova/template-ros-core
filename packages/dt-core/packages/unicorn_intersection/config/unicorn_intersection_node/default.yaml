@@ -1,13 +1,17 @@
 
-time_left_turn: 7.0
+#time_left_turn: 5.0
+time_left_turn: 5
 time_straight_turn: 13
 time_right_turn: 2.5
 
-ff_left: 0.018
+#ff_left: 0.0001
+ff_left: 0
 ff_straight: 0
 ff_right: -0.061
 
-LFparams_left: {phi_max: 0.0, phi_min: -0.5, range_est: 0.3, red_to_white: true, use_yellow: true}
+#LFparams_left: {phi_max: -0.05, phi_min: -0.1, range_est: 0.3, red_to_white: true, use_yellow: true}
+
+LFparams_left: {"red_to_white": True }
 LFparams_straight: {"red_to_white": True}
 LFparams_right: {phi_max: 0.27, phi_min: 0.0, range_est: 0.3, red_to_white: false}
 
