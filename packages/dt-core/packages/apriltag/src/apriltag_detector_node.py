@@ -63,7 +63,7 @@ class AprilTagDetector(DTROS):
             "~image", CompressedImage, self._img_cb, queue_size=1, buff_size="20MB"
         )
         self._cinfo_sub = rospy.Subscriber("~camera_info", CameraInfo, self._cinfo_cb, queue_size=1)
-        self.sub_fsm = rospy.Subscriber("/autobot05/fsm_node/mode", FSMState, self.cbFSMState)
+        self.sub_fsm = rospy.Subscriber("~fsm_node/mode", FSMState, self.cbFSMState)
         # create publisher
         self._tag_pub = rospy.Publisher(
             "~detections",
