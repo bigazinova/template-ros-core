@@ -75,27 +75,26 @@ class RandomAprilTagTurnsNode:
                 signType = taginfo.traffic_sign_type
                 if signType == taginfo.NO_RIGHT_TURN or signType == taginfo.LEFT_T_INTERSECT:
                     availableTurns = [
-                        0,
                         1,
                     ]  # these mystical numbers correspond to the array ordering in open_loop_intersection_control_node (very bad)
                 elif signType == taginfo.NO_LEFT_TURN or signType == taginfo.RIGHT_T_INTERSECT:
                     availableTurns = [1, 2]
                 elif signType == taginfo.FOUR_WAY:
-                    availableTurns = [0, 1, 2]
+                    availableTurns = [1, 2]
                 elif signType == taginfo.T_INTERSECTION:
-                    availableTurns = [0, 2]
+                    availableTurns = [2]
                 rospy.loginfo(f"[{self.node_name}] reports Available turns are: [{availableTurns}]")
                 # now randomly choose a possible direction
                 if len(availableTurns) > 0:
                     # 3501: turn off right turns
-                    # randomIndex = numpy.random.randint(len(availableTurns))
-                    # chosenTurn = availableTurns[randomIndex]
-                    while True:
-                        randomIndex = numpy.random.randint(len(availableTurns))
-                        chosenTurn = availableTurns[randomIndex]
-                        rospy.loginfo("Turn type now: %i" %(chosenTurn))
-                        if chosenTurn != 2:
-                            break
+                    randomIndex = numpy.random.randint(len(availableTurns))
+                    chosenTurn = availableTurns[randomIndex]
+                    #while True:
+                    #    randomIndex = numpy.random.randint(len(availableTurns))
+                    #    chosenTurn = availableTurns[randomIndex]
+                    #    rospy.loginfo("Turn type now: %i" %(chosenTurn))
+                    #    if chosenTurn != 2:
+                    #        break
                     # end of fix
 
                     self.turn_type = chosenTurn
