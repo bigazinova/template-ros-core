@@ -5,49 +5,14 @@
   <arg name="verbose" default="true"/>
 
 	<!-- start basic args -->
-	<include file="$(find duckietown_demos)/launch/master.launch">
+    <remap from="line_detector_node/thresholds" to="anti_instagram_node/thresholds"/>
+    <remap from="line_detector_node/image/compressed" to="camera_node/image/compressed"/>
+
+	<include file="$(find custom_line_detector)/launch/line_detector_node.launch">
 		<!-- Basic parameters -->
 		<arg name="veh" value="$(arg veh)"/>
-        <arg name="demo_name" value="$(arg demo_name)"/>
+<!--        <arg name="demo_name" value="$(arg demo_name)"/>-->
 		<arg name="param_file_name" default="default" />
-		<arg name="visualization" value="false" />
-
-        <!-- Finite state machine -->
-        <arg name="fsm" value="true"/>
-        <arg name="/fsm/logic_gate" value="true"/>
-		<!-- Basic functionalities -->
-		<arg name="line_detector_param_file_name" default="default" />
-		<arg name="anti_instagram" default="false" />
-		<arg name="/camera/raw" value="true"/>
-		<arg name="/camera/rect" value="true"/>
-		<arg name="LED" value="false"/>
-		<arg name="/LED/detector" value="false"/>
-		<arg name="/LED/pattern_switch" value="false"/>
-
-        <!-- Lane Following stack -->
-        <arg name="lane_following" value="true"/>
-        <arg name="/lane_following/line_detection" value="true"/>
-        <arg name="/lane_following/ground_projection" value="true"/>
-        <arg name="/lane_following/lane_filter" value="true"/>
-        <arg name="/lane_following/lane_controller" value="true"/>
-        <arg name="/lane_following/stop_line_filter" value="true"/>
-
-        <!-- Vehicle avoidance stack -->
-        <arg name="vehicle_avoidance" value="false"/>
-        <arg name="/vehicle_avoidance/detection" value="false" />
-        <arg name="/vehicle_avoidance/filter" value="false" />
-        <arg name="/vehicle_avoidance/control" value="false"/>
-                
-		<!-- Intersection arguments -->
-		<arg name="unicorn_intersection" value="true"/>
-		<arg name="apriltags" value="true" />
-		<arg name="apriltags_random" value="true" />
-		<arg name="intersectionType" value="trafficLight"/>
-
-		<!-- Multi-bot behaviours -->
-		<arg name="coordination" value="true"/>
-		<arg name="/coordination/implicit_coordination" value="false"/>
-		<arg name="/coordination/explicit_coordination" value="true"/>
-
+<!--		<arg name="visualization" value="false" />-->
 	</include>
 </launch>
