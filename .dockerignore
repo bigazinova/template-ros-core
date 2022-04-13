@@ -9,4 +9,5 @@
 !launch.sh
 
 # YOUR FILES LISTED BELOW THIS LINE (IMPORTANT: PREPEND !)
+!install_torch.sh
 # ----------------------------------------------------------------------------

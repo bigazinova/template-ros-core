@@ -3,6 +3,7 @@ import os
 import rospy
 from duckietown.dtros import DTROS, NodeType
 from duckietown_msgs.msg import Twist2DStamped, StopLineReading
+import torch
 
 class MyNode(DTROS):
 
@@ -20,15 +21,15 @@ class MyNode(DTROS):
         # publish message every 1 second
         rate = rospy.Rate(0.5) # 1Hz
         while not rospy.is_shutdown():
-            continue
             msg = Twist2DStamped()
-            msg.v = 0.0
+            msg.v = 0.1
             msg.omega = 1.0
-            rospy.loginfo("Publishing message")
+            rospy.loginfo("Publishing message run")
+            rospy.loginfo("GPU available: {}".format(torch.cuda.is_available()))
             self.pub.publish(msg)
             rate.sleep()
             msg.omega = 0.0
-            rospy.loginfo("Publishing message -")
+            rospy.loginfo("Publishing message stop")
             self.pub.publish(msg)
             rate.sleep()
 
