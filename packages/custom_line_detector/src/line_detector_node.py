@@ -4,13 +4,14 @@ import numpy as np
 import cv2
 import rospy
 from cv_bridge import CvBridge
-from sensor_msgs.msg import CompressedImage, Image
+from sensor_msgs.msg import CompressedImage, Image, CameraInfo
 from duckietown_msgs.msg import Segment, SegmentList, AntiInstagramThresholds
 from custom_line_detector import LineDetector, ColorRange, plotSegments, plotMaps
 from image_processing.anti_instagram import AntiInstagram
-
+import os
+from image_geometry import PinholeCameraModel
 from duckietown.dtros import DTROS, NodeType, TopicType
-
+# from camera_info_manager import CameraInfoManager
 
 class LineDetectorNode(DTROS):
     """
@@ -58,8 +59,9 @@ class LineDetectorNode(DTROS):
         self._colors = rospy.get_param("~colors", None)
         self._img_size = rospy.get_param("~img_size", None)
         self._top_cutoff = rospy.get_param("~top_cutoff", None)
-
+        self.vehicle = os.getenv('HOSTNAME')
         self.bridge = CvBridge()
+        self.rectify_alpha = rospy.get_param("~rectify_alpha", 0.0)
 
         # The thresholds to be used for AntiInstagram color correction
         self.ai_thresholds_received = False
@@ -97,6 +99,9 @@ class LineDetectorNode(DTROS):
         self.pub_d_ranges_HV = rospy.Publisher(
             "~debug/ranges_HV", Image, queue_size=1, dt_topic_type=TopicType.DEBUG
         )
+        self.pub_contours = rospy.Publisher(
+            "~debug/contours/compressed", CompressedImage, queue_size=1, dt_topic_type=TopicType.DEBUG
+        )
 
         # Subscribers
         self.sub_image = rospy.Subscriber(
@@ -106,6 +111,38 @@ class LineDetectorNode(DTROS):
         self.sub_thresholds = rospy.Subscriber(
             "~thresholds", AntiInstagramThresholds, self.thresholds_cb, queue_size=1
         )
+
+        self.sub_cam_info = rospy.Subscriber(
+            '/{}/camera_node/camera_info'.format(self.vehicle), CameraInfo, self._cinfo_cb, queue_size=1
+        )
+
+    def _cinfo_cb(self, msg):
+        # create mapx and mapy
+        H, W = msg.height, msg.width
+        self.K = msg.K
+        self.D = msg.D
+        # create new camera info
+        # self.camera_model = PinholeCameraModel()
+        # self.camera_model.fromCameraInfo(msg)
+        # # find optimal rectified pinhole camera
+        # with self.profiler("/cb/camera_info/get_optimal_new_camera_matrix"):
+        #     rect_K, _ = cv2.getOptimalNewCameraMatrix(
+        #         self.camera_model.K, self.camera_model.D, (W, H), self.rectify_alpha
+        #     )
+        #     # store new camera parameters
+        #     self._camera_parameters = (rect_K[0, 0], rect_K[1, 1], rect_K[0, 2], rect_K[1, 2])
+        # # create rectification map
+        # with self.profiler("/cb/camera_info/init_undistort_rectify_map"):
+        #     self._mapx, self._mapy = cv2.initUndistortRectifyMap(
+        #         self.camera_model.K, self.camera_model.D, None, rect_K, (W, H), cv2.CV_32FC1
+        #     )
+        # once we got the camera info, we can stop the subscriber
+        # self.loginfo("Camera info message received. Unsubscribing from camera_info topic.")
+        # noinspection PyBroadException
+        try:
+            self._cinfo_sub.shutdown()
+        except BaseException:
+            pass
 
     def thresholds_cb(self, thresh_msg):
         self.anti_instagram_thresholds["lower"] = thresh_msg.low
@@ -144,23 +181,18 @@ class LineDetectorNode(DTROS):
                 self.anti_instagram_thresholds["lower"], self.anti_instagram_thresholds["higher"], image
             )
 
-        # Resize the image to the desired dimensions
-        height_original, width_original = image.shape[0:2]
-        img_size = (self._img_size[1], self._img_size[0])
-        if img_size[0] != width_original or img_size[1] != height_original:
-            image = cv2.resize(image, img_size, interpolation=cv2.INTER_NEAREST)
-        image = image[self._top_cutoff :, :, :]
+
 
         # Extract the line segments for every color
         self.detector.setImage(image)
+        # detections = {}
         detections = {
             color: self.detector.detectLines(ranges) for color, ranges in list(self.color_ranges.items())
         }
-        for color, ranges in list(self.color_ranges.items()):
-            if color == 'YELLOW':
-                detections['YELLOW'] = self.detector.detectYellowLines(ranges)
+        # for color, ranges in list(self.color_ranges.items()):
+        #     if color == 'YELLOW':
+        #         detections['YELLOW'] = self.detector.detectYellowLines(ranges, image)
 
-        #print(detections)
 
         # Construct a SegmentList
         segment_list = SegmentList()
@@ -213,6 +245,23 @@ class LineDetectorNode(DTROS):
             debug_image_msg = self.bridge.cv2_to_compressed_imgmsg(debug_img)
             debug_image_msg.header = image_msg.header
             self.pub_d_maps.publish(debug_image_msg)
+            
+        if self.pub_contours.get_num_connections() > 0:
+            print(np.array(self.K).reshape((3, 3)))
+            print()
+            image = cv2.undistort(image, np.array(self.K).reshape((3, 3)), np.array(self.D))
+            # image = cv2.undistort(image, self.camera_model.K, self.camera_model.D)
+            # Resize the image to the desired dimensions
+            height_original, width_original = image.shape[0:2]
+            img_size = (self._img_size[1], self._img_size[0])
+            if img_size[0] != width_original or img_size[1] != height_original:
+                image = cv2.resize(image, img_size, interpolation=cv2.INTER_NEAREST)
+            image = image[self._top_cutoff :, :, :]
+            # image = cv2.undistort(image, self.camera_model.K, self.camera_model.D)
+            image, _ = self.detector._detect_dash_line(image)
+            debug_image_msg = self.bridge.cv2_to_compressed_imgmsg(image)
+            debug_image_msg.header = image_msg.header
+            self.pub_contours.publish(debug_image_msg)
 
         for channels in ["HS", "SV", "HV"]:
             publisher = getattr(self, f"pub_d_ranges_{channels}")

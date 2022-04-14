@@ -1,8 +1,17 @@
 import cv2
 import numpy as np
-
+from math import sqrt
 from line_detector_interface import LineDetectorInterface
 from .detections import Detections
+
+MIN_PIXEL = 3
+MAX_PIXEL = 200
+PART_OF_INTEREST = 0.7
+EPS = 8
+CAMERA_MATRIX = np.array(
+    [[278.79547761007365, 0.0, 314.29374336264345], [0.0, 280.52395701002115, 228.59132685202135], [0.0, 0.0, 1.0]])
+DISTORTION_COEFFFICIENTS = np.array(
+    [-0.23670917420627122, 0.03455456424406622, 0.0037778674941860426, 0.0020245279929775382, 0.0])
 
 
 class LineDetector(LineDetectorInterface):
@@ -38,6 +47,14 @@ class LineDetector(LineDetectorInterface):
 
     """
 
+    class Element:
+        def __init__(self, ncenter, ndx, ndy, rad):
+            self.center = ncenter
+            self.dx = int(ndx)
+            self.dy = int(ndy)
+            self.rad = int(rad)
+            
+
     def __init__(
         self,
         canny_thresholds=[80, 200],
@@ -59,6 +76,162 @@ class LineDetector(LineDetectorInterface):
         self.bgr = np.empty(0)  #: Holds the ``BGR`` representation of an image
         self.hsv = np.empty(0)  #: Holds the ``HSV`` representation of an image
         self.canny_edges = np.empty(0)  #: Holds the Canny edges of an image
+        self.last_dash_line = []
+
+    @staticmethod
+    def get_max_dist_between_elements(img, y):
+        height, width, _ = img.shape
+        max_dist = 170
+        step = 100
+        if height - step <= y <= height:
+            return max_dist
+        if height - step * 2 <= y:
+            return (max_dist >> 1) + 10
+        elif height - step * 2.5 <= y:
+            return max_dist >> 2
+        else:
+            return max_dist >> 5
+
+    @staticmethod
+    def _max_radius(h, img_len):
+        if h > img_len * PART_OF_INTEREST:
+            return 0
+        alpha = (1 - (MIN_PIXEL + EPS) / MAX_PIXEL) / (img_len * PART_OF_INTEREST)
+        return MAX_PIXEL * (1 - alpha * h)
+
+    @staticmethod
+    def _dist_pixels(pix1, pix2):
+        return int(sqrt((pix1[0] - pix2[0]) ** 2 + (pix1[1] - pix2[1]) ** 2))
+
+    def _filter_contours(self, contours, img):
+        filtered_contours = []
+        for k, contour in enumerate(contours):
+            approx = cv2.approxPolyDP(contour, 0.04 * cv2.arcLength(contour, True), True)
+            center = sum(approx) / approx.shape[0]
+
+            radius = max(contour, key=lambda x: abs(center[0][0] - x[0][0]) ** 2 + abs(center[0][1] - x[0][1]) ** 2)
+            radius_length = ((radius[0][0] - center[0][0]) ** 2 + (radius[0][1] - center[0][1]) ** 2) ** (0.5)
+
+            if not MIN_PIXEL < radius_length < MAX_PIXEL:
+                continue
+
+            if len(approx) in (3, 4):
+                dx = 0
+                dy = 0
+                for el in approx:
+                    x1 = int(el[0][0])
+                    y1 = int(el[0][1])
+                    for el2 in approx:
+                        x2 = int(el2[0][0])
+                        y2 = int(el2[0][1])
+                        dx = max(dx, abs(x2 - x1))
+                        dy = max(dy, abs(y2 - y1))
+                dy = max(dy, int(dx * 0.4))
+                dx //= 2
+                dy //= 2
+                ans = []
+                max_dist = 0
+
+                for el in approx:
+                    for el2 in approx:
+                        if self._dist_pixels(el[0], el2[0]) > max_dist:
+                            max_dist = self._dist_pixels(el[0], el2[0])
+                            ans = [el[0], el2[0]]
+                ncent = [(ans[0][0] + ans[1][0]) // 2, (ans[0][1] + ans[1][1]) // 2]
+
+                if np.array_equal(img[int(center[0][1]), int(center[0][0])], [0, 0, 0]):
+
+                    continue
+                filtered_contours.append(self.Element(ncent, dx, dy, radius_length))
+                
+        return filtered_contours
+
+    @staticmethod
+    def sort_contours(contours):
+        return sorted(contours, key=lambda contour: (contour.center[1], contour.center[0]), reverse=True)
+
+    def detect_dash_line_for_pub(self, img):
+        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        ret, threshold_image = cv2.threshold(gray, 145, 255, cv2.THRESH_BINARY)  # 150, 255, 0)
+        contours, _ = cv2.findContours(threshold_image, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        contours = self._filter_contours(contours, threshold_image)
+        contours = self.sort_contours(contours)
+        for i, contour in enumerate(contours):
+            cv2.circle(threshold_image, (int(contour.center[0]), int(contour.center[1])), int(contour.rad), (255, 255, 0),
+                       thickness=5)
+        # next_contour = False
+        # ans_dash_line = []
+        # prev_contour = contours[0]
+        # cv2.circle(threshold_image, (int(prev_contour.center[0]), int(prev_contour.center[1])), int(prev_contour.rad), (255, 255, 0),
+        #            thickness=3)
+        return threshold_image
+
+    def _detect_dash_line(self, img):
+
+        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        ret, threshold_image = cv2.threshold(gray, 145, 255, cv2.THRESH_BINARY)  # 150, 255, 0)
+        contours, h = cv2.findContours(threshold_image, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        threshold_image = cv2.cvtColor(threshold_image, cv2.COLOR_GRAY2RGB)
+
+        contours = self._filter_contours(contours, threshold_image)
+        contours = self.sort_contours(contours)
+        next_contour = False
+        ans_dash_line = []
+
+        prev_contour = contours[0]
+        cv2.circle(threshold_image, (int(prev_contour.center[0]), int(prev_contour.center[1])), int(prev_contour.rad), (255, 255, 0),
+                       thickness=1)
+
+        # cv2.putText(threshold_image, str(0), (int(prev_contour.center[0]), int(prev_contour.center[1])),
+        #             cv2.FONT_HERSHEY_SIMPLEX, 0.42, (0, 8, 230), thickness=1)
+        for i, contour in enumerate(contours[1:]):
+            cv2.circle(threshold_image, (int(contour.center[0]), int(contour.center[1])), int(contour.rad), (255, 255, 0),
+                           thickness=1)
+            max_dist = self.get_max_dist_between_elements(threshold_image, prev_contour.center[1])
+        #     # cv2.putText(threshold_image, str(i), (int(contour.center[0]), int(contour.center[1])),
+        #     #             cv2.FONT_HERSHEY_SIMPLEX, 0.42, (0, 8, 230), thickness=1)
+            dist = self._dist_pixels(contour.center, prev_contour.center)
+            if dist <= max_dist and not self.is_inside(contour, prev_contour):
+                ans_dash_line.append(prev_contour)
+                next_contour = True
+            else:
+                if next_contour:
+                    ans_dash_line.append(prev_contour)
+                next_contour = False
+
+            prev_contour = contour
+
+        if next_contour:
+            ans_dash_line.append(prev_contour)
+        return threshold_image, ans_dash_line
+
+    @staticmethod
+    def is_inside(first_line, second_line):
+        if first_line.center == second_line.center and first_line.rad == second_line.rad:  # переопределить метод сравнения
+            return False
+        big_cont = first_line if first_line.rad > second_line.rad else second_line
+        small_cont = first_line if first_line.rad < second_line.rad else second_line
+        dist_between_cent = LineDetector._dist_pixels(first_line.center, second_line.center)
+        if small_cont.rad + dist_between_cent < big_cont.rad:
+            return True
+        return False
+
+    @staticmethod
+    def is_cross(first_line, second_line):
+        dist_between_cent = LineDetector._dist_pixels(first_line.center, second_line.center)
+        e = 5 # зависимость от координат
+        if first_line.rad + second_line.rad < dist_between_cent + e:
+            return False
+        return True
+
+    @staticmethod
+    def _make_undistorted_image(img):
+        return cv2.undistort(img, CAMERA_MATRIX, DISTORTION_COEFFFICIENTS)
+
+    @staticmethod
+    def _sum(pix1, pix2):
+        return [pix1[0] + pix2[0], pix1[1] + pix2[1]]
+
 
     def setImage(self, image):
         """
@@ -217,7 +390,7 @@ class LineDetector(LineDetectorInterface):
         centers, normals = self.findNormal(map, lines)
         return Detections(lines=lines, normals=normals, map=map, centers=centers)
 
-    def detectYellowLines(self, color_range):
+    def detectYellowLines(self, color_range, img):
         """
         Detects the line segments in the currently set image that occur in and the edges of the regions of the image
         that are within the provided colour ranges.
@@ -228,14 +401,18 @@ class LineDetector(LineDetectorInterface):
         Returns:
             :py:class:`Detections`: A :py:class:`Detections` object with the map of regions containing the desired colors, and the detected lines, together with their center points and normals,
         """
+        print('!!')
+        img = self._make_undistorted_image(img)
+        _, lines = self._detect_dash_line(img)
+        print(lines)
+        lines = np.asarray(lines)
 
+        # lines = np.asarray([[10,10,10,50],
+        #                     [20,20,20,60],
+        #                     [60,20,40,60],
+        #                     [40,30,20,40]
+        #                     ])
         map = np.full((80, 160), 255, dtype=int)
-        lines = np.asarray([[10,10,10,50],
-                            [20,20,20,60],
-                            [60,20,40,60],
-                            [40,30,20,40]
-                            ])
-
         centers, normals = self.findNormal(map, lines)
         return Detections(lines=lines, normals=normals, map=map, centers=centers)
 
