@@ -119,23 +119,22 @@ class LineDetectorNode(DTROS):
     def _cinfo_cb(self, msg):
         # create mapx and mapy
         H, W = msg.height, msg.width
-        self.K = msg.K
-        self.D = msg.D
+
         # create new camera info
-        # self.camera_model = PinholeCameraModel()
-        # self.camera_model.fromCameraInfo(msg)
-        # # find optimal rectified pinhole camera
-        # with self.profiler("/cb/camera_info/get_optimal_new_camera_matrix"):
-        #     rect_K, _ = cv2.getOptimalNewCameraMatrix(
-        #         self.camera_model.K, self.camera_model.D, (W, H), self.rectify_alpha
-        #     )
-        #     # store new camera parameters
-        #     self._camera_parameters = (rect_K[0, 0], rect_K[1, 1], rect_K[0, 2], rect_K[1, 2])
-        # # create rectification map
-        # with self.profiler("/cb/camera_info/init_undistort_rectify_map"):
-        #     self._mapx, self._mapy = cv2.initUndistortRectifyMap(
-        #         self.camera_model.K, self.camera_model.D, None, rect_K, (W, H), cv2.CV_32FC1
-        #     )
+        self.camera_model = PinholeCameraModel()
+        self.camera_model.fromCameraInfo(msg)
+        # find optimal rectified pinhole camera
+        with self.profiler("/cb/camera_info/get_optimal_new_camera_matrix"):
+            rect_K, _ = cv2.getOptimalNewCameraMatrix(
+                self.camera_model.K, self.camera_model.D, (W, H), self.rectify_alpha
+            )
+            # store new camera parameters
+            self._camera_parameters = (rect_K[0, 0], rect_K[1, 1], rect_K[0, 2], rect_K[1, 2])
+        # create rectification map
+        with self.profiler("/cb/camera_info/init_undistort_rectify_map"):
+            self._mapx, self._mapy = cv2.initUndistortRectifyMap(
+                self.camera_model.K, self.camera_model.D, None, rect_K, (W, H), cv2.CV_32FC1
+            )
         # once we got the camera info, we can stop the subscriber
         # self.loginfo("Camera info message received. Unsubscribing from camera_info topic.")
         # noinspection PyBroadException
@@ -247,17 +246,16 @@ class LineDetectorNode(DTROS):
             self.pub_d_maps.publish(debug_image_msg)
             
         if self.pub_contours.get_num_connections() > 0:
-            print(np.array(self.K).reshape((3, 3)))
-            print()
-            image = cv2.undistort(image, np.array(self.K).reshape((3, 3)), np.array(self.D))
-            # image = cv2.undistort(image, self.camera_model.K, self.camera_model.D)
+            # image = cv2.undistort(image, np.array(self.K).reshape((3, 3)), np.array(self.D))
+            image = cv2.undistort(image, self.camera_model.K, self.camera_model.D)
+
             # Resize the image to the desired dimensions
             height_original, width_original = image.shape[0:2]
             img_size = (self._img_size[1], self._img_size[0])
             if img_size[0] != width_original or img_size[1] != height_original:
                 image = cv2.resize(image, img_size, interpolation=cv2.INTER_NEAREST)
             image = image[self._top_cutoff :, :, :]
-            # image = cv2.undistort(image, self.camera_model.K, self.camera_model.D)
+
             image, _ = self.detector._detect_dash_line(image)
             debug_image_msg = self.bridge.cv2_to_compressed_imgmsg(image)
             debug_image_msg.header = image_msg.header
