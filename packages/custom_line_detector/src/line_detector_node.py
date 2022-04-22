@@ -227,6 +227,12 @@ class LineDetectorNode(DTROS):
 
         # If there are any subscribers to the debug topics, generate a debug image and publish it
         if self.pub_d_segments.get_num_connections() > 0:
+            height_original, width_original = image.shape[0:2]
+            img_size = (self._img_size[1], self._img_size[0])
+            if img_size[0] != width_original or img_size[1] != height_original:
+                image = cv2.resize(image, img_size, interpolation=cv2.INTER_NEAREST)
+            image = image[self._top_cutoff :, :, :]
+
             colorrange_detections = {self.color_ranges[c]: det for c, det in list(detections.items())}
             debug_img = plotSegments(image, colorrange_detections)
             debug_image_msg = self.bridge.cv2_to_compressed_imgmsg(debug_img)

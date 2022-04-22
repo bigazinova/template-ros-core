@@ -6,8 +6,8 @@ from math import sqrt
 from line_detector_interface import LineDetectorInterface
 from .detections import Detections
 
-MIN_PIXEL = 3
-MAX_PIXEL = 200
+MIN_PIXEL = 2
+MAX_PIXEL = 30
 PART_OF_INTEREST = 0.7
 EPS = 8
 CAMERA_MATRIX = np.array(
@@ -109,21 +109,22 @@ class LineDetector(LineDetectorInterface):
 
         filtered_contours = []
         for k, contour in enumerate(contours):
+            print('-'*80)
+
             # cv2.drawContours(img, contours, k, (0, 100, 100), thickness=1)
             approx = cv2.approxPolyDP(contour, 0.045 * cv2.arcLength(contour, True), True)
             center = sum(approx) / approx.shape[0]
-            cv2.putText(img, str(len(approx)), (int(center[0][0]), int(center[0][1])),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.32, (0, 8, 230), thickness=1)
+            # cv2.putText(img, str(len(approx)), (int(center[0][0]), int(center[0][1])),
+            #     cv2.FONT_HERSHEY_SIMPLEX, 0.32, (0, 8, 230), thickness=1)
             radius = max(contour, key=lambda x: abs(center[0][0] - x[0][0]) ** 2 + abs(center[0][1] - x[0][1]) ** 2)
 
             radius_length = ((radius[0][0] - center[0][0]) ** 2 + (radius[0][1] - center[0][1]) ** 2) ** (0.5)
-            if radius_length > 60:
+
+            if MAX_PIXEL < radius_length or radius_length < MIN_PIXEL:
                 continue
-
-            # if not MIN_PIXEL < radius_length < MAX_PIXEL:
-            #     continue
-
+            print(k, radius_length, len(approx))
             if len(approx) in (3, 4):
+
                 # cv2.drawContours(img, contours, k, (0, 100, 100), thickness=2)
                 dx = 0
                 dy = 0
@@ -154,7 +155,7 @@ class LineDetector(LineDetectorInterface):
                 # cv2.drawContours(img, contours, k, (100, 0, 100), thickness=1)
 
                 filtered_contours.append(self.Element(ncent, dx, dy, radius_length))
-                
+        print('='*80)
         return filtered_contours
 
 
@@ -163,7 +164,7 @@ class LineDetector(LineDetectorInterface):
 
 
     def _detect_dash_line(self, img):
-
+        print('!'*80)
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
         ret, threshold_image = cv2.threshold(gray, 145, 255, cv2.THRESH_BINARY)  # 150, 255, 0)
         contours, h = cv2.findContours(threshold_image, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
@@ -178,19 +179,22 @@ class LineDetector(LineDetectorInterface):
         # cv2.circle(threshold_image, (int(prev_contour.center[0]), int(prev_contour.center[1])), int(prev_contour.rad), (255, 255, 0),
         #                thickness=1)
 
-        # cv2.putText(threshold_image, str(0), (int(prev_contour.center[0]), int(prev_contour.center[1])),
-        #             cv2.FONT_HERSHEY_SIMPLEX, 0.42, (0, 8, 230), thickness=1)
+        cv2.putText(threshold_image, str(0), (int(prev_contour.center[0]), int(prev_contour.center[1])),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.3, (0, 80, 230), thickness=1)
         for i, contour in enumerate(contours[1:]):
             # cv2.circle(threshold_image, (int(contour.center[0]), int(contour.center[1])), int(contour.rad), (255, 255, 0),
             #                thickness=1)
             max_dist = self.get_max_dist_between_elements(threshold_image, prev_contour.center[1])
-            print(i)
-            print(max_dist)
 
-            # cv2.putText(threshold_image, str(i+1), (int(contour.center[0]), int(contour.center[1])),
-            #             cv2.FONT_HERSHEY_SIMPLEX, 0.42, (0, 8, 230), thickness=1)
+
+            cv2.putText(threshold_image, str(i+1), (int(contour.center[0]), int(contour.center[1])),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.32, (0, 80, 230), thickness=1)
             dist = self._dist_pixels(contour.center, prev_contour.center)
+            print(i+1)
+            print(max_dist)
             print(dist)
+            print(contour.rad, prev_contour.rad, dist)
+            print(contour.dx, contour.dy, prev_contour.dx, prev_contour.dy)
             print(self.is_inside(contour, prev_contour))
             if dist <= max_dist and not self.is_inside(contour, prev_contour):
                 ans_dash_line.append(prev_contour)
