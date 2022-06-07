@@ -192,7 +192,6 @@ class LineDetectorNode(DTROS):
             if color == 'YELLOW':
                 detections['YELLOW'] = self.detector.detectYellowLines(image)
 
-
         # Construct a SegmentList
         segment_list = SegmentList()
         segment_list.header.stamp = image_msg.header.stamp

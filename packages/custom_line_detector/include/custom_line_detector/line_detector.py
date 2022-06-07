@@ -89,7 +89,6 @@ class LineDetector(LineDetectorInterface):
 
     @staticmethod
     def get_max_dist_between_elements(y):
-        print('y:', y)
         pol = LineDetector.get_polinom()
         result = round(pol(y))
 
@@ -110,7 +109,6 @@ class LineDetector(LineDetectorInterface):
 
         filtered_contours = []
         for k, contour in enumerate(contours):
-            # print('-' * 80)
 
             # cv2.drawContours(img, contours, k, (0, 100, 100), thickness=1)
             approx = cv2.approxPolyDP(contour, 0.045 * cv2.arcLength(contour, True), True)
@@ -125,7 +123,6 @@ class LineDetector(LineDetectorInterface):
                 continue
 
             if len(approx) in (3, 4):
-
                 el_contour = []
                 # cv2.drawContours(img, contours, k, (0, 100, 100), thickness=2)
                 dx = 0
@@ -142,7 +139,7 @@ class LineDetector(LineDetectorInterface):
                     tmp.extend([x2, y2])
                     el_contour.append(tmp)
                     tmp = [x2, y2]
-                tmp = [x1, y1]
+                tmp.extend([x1, y1])
                 el_contour.append(tmp)
 
                 for el in approx:
@@ -173,7 +170,6 @@ class LineDetector(LineDetectorInterface):
                 # cv2.drawContours(img, contours, k, (100, 0, 100), thickness=1)
 
                 filtered_contours.append(self.Element(ncent, dx, dy, radius_length, el_contour))
-        # print('=' * 80)
         return filtered_contours, img
 
     def sort_contours(self, contours):
@@ -200,17 +196,13 @@ class LineDetector(LineDetectorInterface):
         # cv2.putText(threshold_image, str(0), (int(prev_contour.center[0]), int(prev_contour.center[1])),
         #             cv2.FONT_HERSHEY_SIMPLEX, 0.42, (0, 8, 230), thickness=1)
         for i, contour in enumerate(contours[1:]):
-            print(i + 1)
             max_dist = self.get_max_dist_between_elements(prev_contour.center[1])
-            print('max_dist', max_dist)
-            print('rad', contour.rad)
             # cv2.putText(threshold_image, str(i + 1), (int(contour.center[0]), int(contour.center[1])),
             #             cv2.FONT_HERSHEY_SIMPLEX, 0.42, (0, 8, 230), thickness=1)
             dist = self._dist_pixels(contour.center, prev_contour.center)
             # cv2.circle(threshold_image, (int(contour.center[0]), int(contour.center[1])), int(contour.rad),
             #            (255, 255, 0),
             #            thickness=1)
-            print('dist', dist)
             if dist <= max_dist and not self.is_inside(contour, prev_contour):
                 ans_dash_line.append(prev_contour)
                 next_contour = True
@@ -449,22 +441,17 @@ class LineDetector(LineDetectorInterface):
         Returns:
             :py:class:`Detections`: A :py:class:`Detections` object with the map of regions containing the desired colors, and the detected lines, together with their center points and normals,
         """
-        print('!!!')
-
+        map_ = np.full((80, 160), 255, dtype=int)
         tr_img, lines = self._detect_dash_line(img)
         contours = []
         for line in lines:
             contours.extend(line.approx)
-        print(contours)
         if not contours:
-            return None
+            return Detections(lines=contours, normals=[], map=map_, centers=[])
 
         contours = np.asarray(contours)
-
-        map = np.full((80, 160), 255, dtype=int)
-        centers, normals = self.findNormal(map, contours)
-        print('='*80)
-        return Detections(lines=contours, normals=normals, map=map, centers=centers)
+        centers, normals = self.findNormal(map_, contours)
+        return Detections(lines=contours, normals=normals, map=map_, centers=centers)
 
 '''[array([[[10, 73]],
 
