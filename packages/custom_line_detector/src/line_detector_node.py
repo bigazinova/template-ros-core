@@ -180,7 +180,7 @@ class LineDetectorNode(DTROS):
                 self.anti_instagram_thresholds["lower"], self.anti_instagram_thresholds["higher"], image
             )
 
-
+        image = self.cut_image(image)
 
         # Extract the line segments for every color
         self.detector.setImage(image)
@@ -188,9 +188,9 @@ class LineDetectorNode(DTROS):
         detections = {
             color: self.detector.detectLines(ranges) for color, ranges in list(self.color_ranges.items())
         }
-        # for color, ranges in list(self.color_ranges.items()):
-        #     if color == 'YELLOW':
-        #         detections['YELLOW'] = self.detector.detectYellowLines(ranges, image)
+        for color, ranges in list(self.color_ranges.items()):
+            if color == 'YELLOW':
+                detections['YELLOW'] = self.detector.detectYellowLines(image)
 
 
         # Construct a SegmentList
@@ -227,12 +227,6 @@ class LineDetectorNode(DTROS):
 
         # If there are any subscribers to the debug topics, generate a debug image and publish it
         if self.pub_d_segments.get_num_connections() > 0:
-            height_original, width_original = image.shape[0:2]
-            img_size = (self._img_size[1], self._img_size[0])
-            if img_size[0] != width_original or img_size[1] != height_original:
-                image = cv2.resize(image, img_size, interpolation=cv2.INTER_NEAREST)
-            image = image[self._top_cutoff :, :, :]
-
             colorrange_detections = {self.color_ranges[c]: det for c, det in list(detections.items())}
             debug_img = plotSegments(image, colorrange_detections)
             debug_image_msg = self.bridge.cv2_to_compressed_imgmsg(debug_img)
@@ -253,16 +247,8 @@ class LineDetectorNode(DTROS):
             
         if self.pub_contours.get_num_connections() > 0:
             # image = cv2.undistort(image, np.array(self.K).reshape((3, 3)), np.array(self.D))
-            image = cv2.undistort(image, self.camera_model.K, self.camera_model.D)
-
-            # Resize the image to the desired dimensions
-            height_original, width_original = image.shape[0:2]
-            img_size = (self._img_size[1], self._img_size[0])
-            if img_size[0] != width_original or img_size[1] != height_original:
-                image = cv2.resize(image, img_size, interpolation=cv2.INTER_NEAREST)
-            image = image[self._top_cutoff :, :, :]
-
-            image, _ = self.detector._detect_dash_line(image)
+            # image = cv2.undistort(image, self.camera_model.K, self.camera_model.D)
+            image = self.detector.formatted_answer(image)
             debug_image_msg = self.bridge.cv2_to_compressed_imgmsg(image)
             debug_image_msg.header = image_msg.header
             self.pub_contours.publish(debug_image_msg)
@@ -274,6 +260,14 @@ class LineDetectorNode(DTROS):
                 debug_image_msg = self.bridge.cv2_to_imgmsg(debug_img, encoding="bgr8")
                 debug_image_msg.header = image_msg.header
                 publisher.publish(debug_image_msg)
+
+    def cut_image(self, image):
+        height_original, width_original = image.shape[0:2]
+        img_size = (self._img_size[1], self._img_size[0])
+        if img_size[0] != width_original or img_size[1] != height_original:
+            image = cv2.resize(image, img_size, interpolation=cv2.INTER_NEAREST)
+        image = image[self._top_cutoff :, :, :]
+        return image
 
     @staticmethod
     def _to_segment_msg(lines, normals, color):
