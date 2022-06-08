@@ -188,9 +188,9 @@ class LineDetectorNode(DTROS):
         detections = {
             color: self.detector.detectLines(ranges) for color, ranges in list(self.color_ranges.items())
         }
-        for color, ranges in list(self.color_ranges.items()):
-            if color == 'YELLOW':
-                detections['YELLOW'] = self.detector.detectYellowLines(image)
+        # for color, ranges in list(self.color_ranges.items()):
+        #     if color == 'YELLOW':
+        #         detections['YELLOW'] = self.detector.detectYellowLines(image)
 
         # Construct a SegmentList
         segment_list = SegmentList()
