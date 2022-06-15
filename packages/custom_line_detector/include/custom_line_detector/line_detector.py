@@ -5,6 +5,8 @@ import numpy as np
 from math import sqrt
 from line_detector_interface import LineDetectorInterface
 from .detections import Detections
+import numpy as np
+
 
 MIN_PIXEL = 3
 MAX_PIXEL = 30
@@ -123,6 +125,7 @@ class LineDetector(LineDetectorInterface):
                 continue
 
             if len(approx) in (3, 4):
+
                 el_contour = []
                 # cv2.drawContours(img, contours, k, (0, 100, 100), thickness=2)
                 dx = 0
@@ -131,16 +134,56 @@ class LineDetector(LineDetectorInterface):
                 el_0 = approx[0]
                 x1 = int(el_0[0][0])
                 y1 = int(el_0[0][1])
+
                 tmp = [x1, y1]
+                contour = []
+                d = []
 
                 for el in approx[1:]:
                     x2 = int(el[0][0])
                     y2 = int(el[0][1])
+
                     tmp.extend([x2, y2])
-                    el_contour.append(tmp)
+                    d.append(self._dist_pixels(tmp[:2], tmp[2:]))
+                    contour.append(tmp)
                     tmp = [x2, y2]
+
                 tmp.extend([x1, y1])
-                el_contour.append(tmp)
+                contour.append(tmp)
+                d.append(self._dist_pixels(tmp[:2], tmp[2:]))
+
+                max_dist = max(d)
+                max_dist_index = d.index(max_dist)
+
+                c = contour[max_dist_index]
+                x_list = list(map(int, np.linspace(c[0], c[2], 5)))
+                y_list = list(map(int, np.linspace(c[1], c[3], 5)))
+                print('x', x_list)
+                print('y', y_list)
+                el_contour = []
+                tmp = []
+                for x, y in zip(x_list, y_list):
+                    if tmp:
+                        tmp.extend([x, y])
+                        el_contour.append(tmp)
+                    tmp = [x, y]
+
+                d.pop(max_dist_index)
+                contour.pop(max_dist_index)
+
+                max_dist = max(d)
+                max_dist_index = d.index(max_dist)
+
+                c = contour[max_dist_index]
+                x_list = list(map(int, np.linspace(c[0], c[2], 5)))
+                y_list = list(map(int, np.linspace(c[1], c[3], 5)))
+                tmp = [x_list[0], y_list[0]]
+                for x, y in zip(x_list, y_list):
+                    tmp.extend([x, y])
+                    el_contour.append(tmp)
+                    tmp = [x, y]
+
+                print(el_contour)
 
                 for el in approx:
                     x1 = int(el[0][0])
