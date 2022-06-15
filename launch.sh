@@ -6,9 +6,9 @@ set -e
 # ----------------------------------------------------------------------------
 echo "This is an empty launch script. Update it to launch your application."
 
-roslaunch circle_drive circle_drive.launch
+#roslaunch circle_drive circle_drive.launch
 #roslaunch duckietown_demos lane_following.launch
-#roslaunch --wait circle_drive indefinite_navigation2.launch &
+roslaunch --wait circle_drive indefinite_navigation2.launch
 
 #roslaunch --wait <package> launchfile.launch &
 #sleep 5

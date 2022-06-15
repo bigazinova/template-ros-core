@@ -49,5 +49,13 @@
 		<arg name="/coordination/implicit_coordination" value="false"/>
 		<arg name="/coordination/explicit_coordination" value="true"/>
 
+
+
+
 	</include>
+			
+	<group ns="$(arg veh)">
+		<remap from="circle_drive/car_cmd" to="joy_mapper_node/car_cmd"/>
+		<node name="circle_drive" pkg="circle_drive" type="circle_drive.py" output="screen" required="true"/>
+	</group>
 </launch>

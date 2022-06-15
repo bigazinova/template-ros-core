@@ -3,7 +3,8 @@ ARG REPO_NAME="template-ros-core"
 
 # ==================================================>
 # ==> Do not change this code
-ARG ARCH=arm32v7
+ARG ARCH=amd64
+#arm32v7
 ARG MAJOR=daffy
 ARG BASE_TAG=${MAJOR}-${ARCH}
 ARG BASE_IMAGE=dt-core
