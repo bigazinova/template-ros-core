@@ -16,6 +16,7 @@ CAMERA_MATRIX = np.array(
     [[278.79547761007365, 0.0, 314.29374336264345], [0.0, 280.52395701002115, 228.59132685202135], [0.0, 0.0, 1.0]])
 DISTORTION_COEFFFICIENTS = np.array(
     [-0.23670917420627122, 0.03455456424406622, 0.0037778674941860426, 0.0020245279929775382, 0.0])
+BLACK_PIXEL = [0, 0, 0]
 
 
 class LineDetector(LineDetectorInterface):
@@ -80,7 +81,7 @@ class LineDetector(LineDetectorInterface):
         self.bgr = np.empty(0)  #: Holds the ``BGR`` representation of an image
         self.hsv = np.empty(0)  #: Holds the ``HSV`` representation of an image
         self.canny_edges = np.empty(0)  #: Holds the Canny edges of an image
-        self.last_dash_line = []
+        self.last_correct_edge = []
 
     @staticmethod
     def get_polinom():
@@ -109,81 +110,35 @@ class LineDetector(LineDetectorInterface):
 
     def _filter_contours(self, contours, img):
 
+        self.last_correct_edge = []
         filtered_contours = []
         for k, contour in enumerate(contours):
-
-            # cv2.drawContours(img, contours, k, (0, 100, 100), thickness=1)
             approx = cv2.approxPolyDP(contour, 0.045 * cv2.arcLength(contour, True), True)
             center = sum(approx) / approx.shape[0]
             radius = max(contour, key=lambda x: abs(center[0][0] - x[0][0]) ** 2 + abs(center[0][1] - x[0][1]) ** 2)
-
             radius_length = ((radius[0][0] - center[0][0]) ** 2 + (radius[0][1] - center[0][1]) ** 2) ** (0.5)
-            # cv2.putText(img, str(round(radius_length)), (int(center[0][0]), int(center[0][1])),
-            #             cv2.FONT_HERSHEY_SIMPLEX, 0.22, (0, 8, 230), thickness=1)
-
             if MAX_PIXEL < radius_length or radius_length < MIN_PIXEL:
                 continue
-
-            if len(approx) in (3, 4):
-
-                el_contour = []
-                # cv2.drawContours(img, contours, k, (0, 100, 100), thickness=2)
+            if len(approx) == 4:
+                print('='*80)
                 dx = 0
                 dy = 0
+                contour, distances = self.create_contour_from_approx(approx)
+                max_dist_index = self.get_edge_index(contour, distances, img.shape[0]-1)
 
-                el_0 = approx[0]
-                x1 = int(el_0[0][0])
-                y1 = int(el_0[0][1])
+                edge = contour[max_dist_index]
+                # cv2.line(img, (edge[0], edge[1]), (edge[2], edge[3]), (0, 205, 90), 1)
+                # print('max edge:', edge,'\nmax_dist_index:', max_dist_index)
 
-                tmp = [x1, y1]
-                contour = []
-                d = []
+                contours = LineDetector.get_contour_by_piece(edge)
+                tmp_d = {0: 2, 2: 0, 1: 3, 3: 1} # может быть 3точечный
+                max_dist_index_2 = tmp_d[max_dist_index]
+                edge = contour[max_dist_index_2]
+                # print('max edge:', edge,'\nmax_dist_index:', max_dist_index)
+                # cv2.line(img, (edge[0], edge[1]), (edge[2], edge[3]), (233, 0, 0), 1)
+                contours += LineDetector.get_contour_by_piece(edge)
 
-                for el in approx[1:]:
-                    x2 = int(el[0][0])
-                    y2 = int(el[0][1])
-
-                    tmp.extend([x2, y2])
-                    d.append(self._dist_pixels(tmp[:2], tmp[2:]))
-                    contour.append(tmp)
-                    tmp = [x2, y2]
-
-                tmp.extend([x1, y1])
-                contour.append(tmp)
-                d.append(self._dist_pixels(tmp[:2], tmp[2:]))
-
-                max_dist = max(d)
-                max_dist_index = d.index(max_dist)
-
-                c = contour[max_dist_index]
-                x_list = list(map(int, np.linspace(c[0], c[2], 5)))
-                y_list = list(map(int, np.linspace(c[1], c[3], 5)))
-                print('x', x_list)
-                print('y', y_list)
-                el_contour = []
-                tmp = []
-                for x, y in zip(x_list, y_list):
-                    if tmp:
-                        tmp.extend([x, y])
-                        el_contour.append(tmp)
-                    tmp = [x, y]
-
-                d.pop(max_dist_index)
-                contour.pop(max_dist_index)
-
-                max_dist = max(d)
-                max_dist_index = d.index(max_dist)
-
-                c = contour[max_dist_index]
-                x_list = list(map(int, np.linspace(c[0], c[2], 5)))
-                y_list = list(map(int, np.linspace(c[1], c[3], 5)))
-                tmp = [x_list[0], y_list[0]]
-                for x, y in zip(x_list, y_list):
-                    tmp.extend([x, y])
-                    el_contour.append(tmp)
-                    tmp = [x, y]
-
-                print(el_contour)
+                # print('FIN CONT:', contours, 'LEN F C', len(contours))
 
                 for el in approx:
                     x1 = int(el[0][0])
@@ -208,21 +163,127 @@ class LineDetector(LineDetectorInterface):
                             ans = [el[0], el2[0]]
                 ncent = [(ans[0][0] + ans[1][0]) // 2, (ans[0][1] + ans[1][1]) // 2]
 
-                if np.array_equal(img[int(center[0][1]), int(center[0][0])], [0, 0, 0]):
+                if np.array_equal(img[int(center[0][1]), int(center[0][0])], BLACK_PIXEL):
                     continue
-                # cv2.drawContours(img, contours, k, (100, 0, 100), thickness=1)
-
-                filtered_contours.append(self.Element(ncent, dx, dy, radius_length, el_contour))
+                filtered_contours.append(self.Element(ncent, dx, dy, radius_length, []))
         return filtered_contours, img
+
+    def get_edge_index(self, contour, distances, y):
+        # print('analysis')
+        # print('dist', distances)
+        # for edge in contour:
+        #     print('x1-x2', abs(edge[0]-edge[2]))
+        #     print('y1-y2', abs(edge[1]-edge[3]))
+        if self.last_correct_edge:
+            inv = False
+            last = self.last_correct_edge
+        else:
+            inv = True
+            last = (0, y, contour[0][0], y)
+        edge_index = self.get_index_by_cos(contour[0], contour[1], distances[0], distances[1],
+                                           last, inv)
+        if edge_index != -1:
+            self.last_correct_edge = contour[edge_index]
+            print('by cos')
+            return edge_index
+
+        max_dist_index = np.argmax(distances)
+        if abs(distances[0] - distances[1]) > 2 and abs(distances[2] - distances[3]) > 2:
+            if distances[max_dist_index] > 6:
+                self.last_correct_edge = contour[max_dist_index]
+                print('by length')
+                return max_dist_index
+        print('by 50%')
+        self.last_correct_edge = contour[0]
+        return 0
+
+    def get_index_by_cos(self, a, b, d_a, d_b, last, inv=False):
+        D_E = 0.5
+        E = 0.05
+
+        cos_a = abs(self.get_cos(last, a, d_a))
+        cos_b = abs(self.get_cos(last, b, d_b))
+        print('last correct', last)
+        print('a', a)
+        print('b', b)
+        print('cos_a', cos_a)
+        print('cos_b', cos_b)
+        print('inv', inv)
+
+        if abs(cos_a - 1) <= E:
+            if not inv:
+                return 0
+            return 1
+        if abs(cos_b - 1) <= E:
+            if not inv:
+                return 1
+            return 0
+
+        if abs(cos_a - cos_b) > D_E:
+
+            if not inv:
+                return 0 if cos_a > cos_b else 1
+            else:
+                return 1 if cos_a > cos_b else 0
+
+        else:
+            return -1
+
+    def get_cos(self, last, current, d_current):
+        d_last = self._dist_pixels((last[0], last[1]), (last[2], last[3]))
+        last = [last[0] - last[2], last[1] - last[3]]
+        current = [current[0] - current[2], current[1] - current[3]]
+        try:
+            return (last[0] * current[0] + last[1] * current[1]) / (d_last * d_current)
+        except ZeroDivisionError:
+            return 1
+
+    @staticmethod
+    def get_contour_by_piece(edge):
+        if abs(edge[0] - edge[2]) <= 1 or abs(edge[1] - edge[3]) <= 1:
+            return [edge]
+        x_list = list(map(int, np.linspace(edge[0], edge[2], 3)))
+        y_list = list(map(int, np.linspace(edge[1], edge[3], 3)))
+        el_contour = []
+        tmp = []
+        for x, y in zip(x_list, y_list):
+            if tmp:
+                tmp.extend([x, y])
+                el_contour.append(tmp)
+            tmp = [x, y]
+        return el_contour
+
+    def create_contour_from_approx(self, approx):
+        el_0 = approx[0]
+        x1 = int(el_0[0][0])
+        y1 = int(el_0[0][1])
+
+        tmp = [x1, y1]
+        contour = []
+        distances = []
+
+        for el in approx[1:]:
+            x2 = int(el[0][0])
+            y2 = int(el[0][1])
+
+            tmp.extend([x2, y2])
+            distances.append(self._dist_pixels(tmp[:2], tmp[2:]))
+            contour.append(tmp)
+            tmp = [x2, y2]
+
+        tmp.extend([x1, y1])
+        contour.append(tmp)
+        distances.append(self._dist_pixels(tmp[:2], tmp[2:]))
+        return contour, distances
 
     def sort_contours(self, contours):
         return sorted(contours, key=functools.cmp_to_key(
             lambda contour1, contour2: self._dist_pixels(contour1.center, contour2.center)), reverse=True)
 
     def _detect_dash_line(self, img):
-
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-        ret, threshold_image = cv2.threshold(gray, 145, 255, cv2.THRESH_BINARY)  # 150, 255, 0)
+        ret, threshold_image = cv2.threshold(gray, 0, 255,
+                                             cv2.THRESH_BINARY | cv2.THRESH_OTSU)
         contours, h = cv2.findContours(threshold_image, 1, 2)
         threshold_image = cv2.cvtColor(threshold_image, cv2.COLOR_GRAY2RGB)
         contours, threshold_image = self._filter_contours(contours, threshold_image)
@@ -485,7 +546,7 @@ class LineDetector(LineDetectorInterface):
             :py:class:`Detections`: A :py:class:`Detections` object with the map of regions containing the desired colors, and the detected lines, together with their center points and normals,
         """
         map_ = np.full((80, 160), 255, dtype=int)
-        tr_img, lines = self._detect_dash_line(img)
+        _, lines = self._detect_dash_line(img)
         contours = []
         for line in lines:
             contours.extend(line.approx)
