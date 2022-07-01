@@ -88,21 +88,17 @@ class LineDetector(LineDetectorInterface):
         RIGHT_ANGLE_DIST = 5
         RIGHT_ANGLE = 90
         degrees_a, degrees_b = LineDetector._get_degrees_from_cos(cos_a), LineDetector._get_degrees_from_cos(cos_b)
-        # print('degrees_a', degrees_a, 'degrees_b', degrees_b)
         if abs(degrees_a - degrees_b) > DEGREES_DIST:
-            # print('abs(degrees_a - degrees_b) > DEGREES_E4', abs(cos_a - cos_b) > DEGREES_DIST, 'DEGREES_E', DEGREES_DIST)
             if not inv:
                 return 0 if cos_a > cos_b else 1
             else:
                 return 1 if cos_a > cos_b else 0
         else:
             if abs(degrees_a - RIGHT_ANGLE) <= RIGHT_ANGLE_DIST:
-                # print('abs(degrees_a - RIGHT_ANGLE) <= RIGHT_ANGLE_E', abs(degrees_a - RIGHT_ANGLE) <= RIGHT_ANGLE_DIST)
                 if not inv:
                     return 0
                 return 1
             if abs(degrees_b - RIGHT_ANGLE) <= RIGHT_ANGLE_DIST:
-                # print('abs(degrees_b - RIGHT_ANGLE) <= RIGHT_ANGLE_E', abs(degrees_b - RIGHT_ANGLE) <= RIGHT_ANGLE_DIST)
                 if not inv:
                     return 1
                 return 0
@@ -118,9 +114,9 @@ class LineDetector(LineDetectorInterface):
     @staticmethod
     def _get_max_dist_between_elements(y):
         min_dist_lim = 5
-        # pol = LineDetector._get_polynomial()
-        # result = round(pol(y))
-        result = y / 2
+        pol = LineDetector._get_polynomial()
+        result = round(pol(y))
+        # result = y / 2
         return 0 if result <= min_dist_lim else result
 
     @staticmethod
