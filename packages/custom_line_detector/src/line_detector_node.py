@@ -190,7 +190,7 @@ class LineDetectorNode(DTROS):
         }
         for color, ranges in list(self.color_ranges.items()):
             if color == 'YELLOW':
-                detections['YELLOW'] = self.detector.detectYellowLines(image)
+                detections['YELLOW'] = self.detector.detect_yellow_lines(image)
 
         # Construct a SegmentList
         segment_list = SegmentList()
@@ -245,9 +245,8 @@ class LineDetectorNode(DTROS):
             self.pub_d_maps.publish(debug_image_msg)
             
         if self.pub_contours.get_num_connections() > 0:
-            # image = cv2.undistort(image, np.array(self.K).reshape((3, 3)), np.array(self.D))
             # image = cv2.undistort(image, self.camera_model.K, self.camera_model.D)
-            image = self.detector.formatted_answer(image)
+            image, _ = self.detector.detect_dash_line(image)
             debug_image_msg = self.bridge.cv2_to_compressed_imgmsg(image)
             debug_image_msg.header = image_msg.header
             self.pub_contours.publish(debug_image_msg)

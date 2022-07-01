@@ -1,22 +1,14 @@
 import functools
 
 import cv2
-import numpy as np
 from math import sqrt
 from line_detector_interface import LineDetectorInterface
 from .detections import Detections
 import numpy as np
 
 
-MIN_PIXEL = 3
-MAX_PIXEL = 30
-PART_OF_INTEREST = 0.7
-EPS = 8
-CAMERA_MATRIX = np.array(
-    [[278.79547761007365, 0.0, 314.29374336264345], [0.0, 280.52395701002115, 228.59132685202135], [0.0, 0.0, 1.0]])
-DISTORTION_COEFFFICIENTS = np.array(
-    [-0.23670917420627122, 0.03455456424406622, 0.0037778674941860426, 0.0020245279929775382, 0.0])
 BLACK_PIXEL = [0, 0, 0]
+EDGES_NUM_IN_RECT = 4
 
 
 class LineDetector(LineDetectorInterface):
@@ -52,13 +44,20 @@ class LineDetector(LineDetectorInterface):
 
     """
 
-    class Element:
-        def __init__(self, ncenter, ndx, ndy, rad, approx):
-            self.center = ncenter
-            self.dx = int(ndx)
-            self.dy = int(ndy)
+    class Contour:
+        def __init__(self, center, rad, approx):
+            self.center = center
             self.rad = int(rad)
             self.approx = approx
+
+        def __lt__(self, other):
+            return self.rad < other.rad
+
+        def __eq__(self, other):
+            return self.center == other.center and self.rad == other.rad
+
+        def __gt__(self, other):
+            return self.rad > other.rad
 
     def __init__(
             self,
@@ -84,270 +83,234 @@ class LineDetector(LineDetectorInterface):
         self.last_correct_edge = []
 
     @staticmethod
-    def get_polinom():
-        x = [74, 69, 65, 48, 45, 40, 29, 0]
+    def _check_cos(cos_a, cos_b, inv=False):
+        DEGREES_DIST = 20
+        RIGHT_ANGLE_DIST = 5
+        RIGHT_ANGLE = 90
+        degrees_a, degrees_b = LineDetector._get_degrees_from_cos(cos_a), LineDetector._get_degrees_from_cos(cos_b)
+        # print('degrees_a', degrees_a, 'degrees_b', degrees_b)
+        if abs(degrees_a - degrees_b) > DEGREES_DIST:
+            # print('abs(degrees_a - degrees_b) > DEGREES_E4', abs(cos_a - cos_b) > DEGREES_DIST, 'DEGREES_E', DEGREES_DIST)
+            if not inv:
+                return 0 if cos_a > cos_b else 1
+            else:
+                return 1 if cos_a > cos_b else 0
+        else:
+            if abs(degrees_a - RIGHT_ANGLE) <= RIGHT_ANGLE_DIST:
+                # print('abs(degrees_a - RIGHT_ANGLE) <= RIGHT_ANGLE_E', abs(degrees_a - RIGHT_ANGLE) <= RIGHT_ANGLE_DIST)
+                if not inv:
+                    return 0
+                return 1
+            if abs(degrees_b - RIGHT_ANGLE) <= RIGHT_ANGLE_DIST:
+                # print('abs(degrees_b - RIGHT_ANGLE) <= RIGHT_ANGLE_E', abs(degrees_b - RIGHT_ANGLE) <= RIGHT_ANGLE_DIST)
+                if not inv:
+                    return 1
+                return 0
+            return -1
+
+    @staticmethod
+    def _get_polynomial():
+        x = np.array([74, 69, 65, 48, 45, 40, 29, 0])
         y = np.array([36, 35, 28, 27, 26, 25, 11, 0])
         y = y + 5
         return np.poly1d(np.polyfit(x, y, 4))
 
     @staticmethod
-    def get_max_dist_between_elements(y):
-        pol = LineDetector.get_polinom()
-        result = round(pol(y))
-
-        return 0 if result <= 5 else result
-
-    @staticmethod
-    def _max_radius(h, img_len):
-        if h > img_len * PART_OF_INTEREST:
-            return 0
-        alpha = (1 - (MIN_PIXEL + EPS) / MAX_PIXEL) / (img_len * PART_OF_INTEREST)
-        return MAX_PIXEL * (1 - alpha * h)
+    def _get_max_dist_between_elements(y):
+        min_dist_lim = 5
+        # pol = LineDetector._get_polynomial()
+        # result = round(pol(y))
+        result = y / 2
+        return 0 if result <= min_dist_lim else result
 
     @staticmethod
     def _dist_pixels(pix1, pix2):
-        return int(sqrt((pix1[0] - pix2[0]) ** 2 + (pix1[1] - pix2[1]) ** 2))
+        return sqrt((pix1[0] - pix2[0]) ** 2 + (pix1[1] - pix2[1]) ** 2)
 
     def _filter_contours(self, contours, img):
-
-        self.last_correct_edge = []
         filtered_contours = []
         for k, contour in enumerate(contours):
             approx = cv2.approxPolyDP(contour, 0.045 * cv2.arcLength(contour, True), True)
             center = sum(approx) / approx.shape[0]
             radius = max(contour, key=lambda x: abs(center[0][0] - x[0][0]) ** 2 + abs(center[0][1] - x[0][1]) ** 2)
-            radius_length = ((radius[0][0] - center[0][0]) ** 2 + (radius[0][1] - center[0][1]) ** 2) ** (0.5)
-            if MAX_PIXEL < radius_length or radius_length < MIN_PIXEL:
-                continue
-            if len(approx) == 4:
-                print('='*80)
-                dx = 0
-                dy = 0
-                contour, distances = self.create_contour_from_approx(approx)
-                max_dist_index = self.get_edge_index(contour, distances, img.shape[0]-1)
+            radius_length = sqrt((radius[0][0] - center[0][0]) ** 2 + (radius[0][1] - center[0][1]) ** 2)
 
-                edge = contour[max_dist_index]
-                # cv2.line(img, (edge[0], edge[1]), (edge[2], edge[3]), (0, 205, 90), 1)
-                # print('max edge:', edge,'\nmax_dist_index:', max_dist_index)
+            if len(approx) == EDGES_NUM_IN_RECT:
+                diagonal = self._get_diagonal(approx)
+                cont_center = [int((diagonal[0][0] + diagonal[1][0]) // 2), int((diagonal[0][1] + diagonal[1][1]) // 2)]
 
-                contours = LineDetector.get_contour_by_piece(edge)
-                tmp_d = {0: 2, 2: 0, 1: 3, 3: 1} # может быть 3точечный
-                max_dist_index_2 = tmp_d[max_dist_index]
-                edge = contour[max_dist_index_2]
-                # print('max edge:', edge,'\nmax_dist_index:', max_dist_index)
-                # cv2.line(img, (edge[0], edge[1]), (edge[2], edge[3]), (233, 0, 0), 1)
-                contours += LineDetector.get_contour_by_piece(edge)
-
-                # print('FIN CONT:', contours, 'LEN F C', len(contours))
-
-                for el in approx:
-                    x1 = int(el[0][0])
-                    y1 = int(el[0][1])
-                    for el2 in approx:
-
-                        x2 = int(el2[0][0])
-                        y2 = int(el2[0][1])
-                        dx = max(dx, abs(x2 - x1))
-                        dy = max(dy, abs(y2 - y1))
-
-                dy = max(dy, int(dx * 0.4))
-                dx //= 2
-                dy //= 2
-                ans = []
-                max_dist = 0
-
-                for el in approx:
-                    for el2 in approx:
-                        if self._dist_pixels(el[0], el2[0]) > max_dist:
-                            max_dist = self._dist_pixels(el[0], el2[0])
-                            ans = [el[0], el2[0]]
-                ncent = [(ans[0][0] + ans[1][0]) // 2, (ans[0][1] + ans[1][1]) // 2]
-
-                if np.array_equal(img[int(center[0][1]), int(center[0][0])], BLACK_PIXEL):
+                if np.array_equal(img[int(center[0][1]), int(center[0][0])],  BLACK_PIXEL):
                     continue
-                filtered_contours.append(self.Element(ncent, dx, dy, radius_length, []))
+
+                filtered_contours.append(self.Contour(cont_center, radius_length, approx))
         return filtered_contours, img
 
-    def get_edge_index(self, contour, distances, y):
-        # print('analysis')
-        # print('dist', distances)
-        # for edge in contour:
-        #     print('x1-x2', abs(edge[0]-edge[2]))
-        #     print('y1-y2', abs(edge[1]-edge[3]))
+    def _get_diagonal(self, approx):
+        diagonal = []
+        max_dist = 0
+        for cortex_1 in approx:
+            for cortex_2 in approx:
+                if self._dist_pixels(cortex_1[0], cortex_2[0]) > max_dist:
+                    max_dist = self._dist_pixels(cortex_1[0], cortex_2[0])
+                    diagonal = [cortex_1[0], cortex_2[0]]
+        return diagonal
+
+    def get_edges_from_contours(self, img, contours):
+        self.last_correct_edge = []
+        edges = []
+        for contour in contours:
+            contour, distances = self._create_edges_from_approx(contour.approx)
+            max_edge_ind = self._get_max_edge_index(contour, distances, img.shape[0] - 1)
+
+            edge = contour[max_edge_ind]
+            edges += LineDetector._get_contour_by_piece(edge)
+
+            max_edge_ind = (max_edge_ind + 2) % EDGES_NUM_IN_RECT
+            edge = contour[max_edge_ind]
+            edges += LineDetector._get_contour_by_piece(edge)
+        return edges
+
+    def _get_max_edge_index(self, contour, distances, y):
+
         if self.last_correct_edge:
-            inv = False
+            has_last = False
             last = self.last_correct_edge
         else:
-            inv = True
-            last = (0, y, contour[0][0], y)
-        edge_index = self.get_index_by_cos(contour[0], contour[1], distances[0], distances[1],
-                                           last, inv)
-        if edge_index != -1:
-            self.last_correct_edge = contour[edge_index]
-            print('by cos')
-            return edge_index
+            has_last = True
+            x = contour[0][0] if contour[0][0] != 0 else 10
+            last = (0, y, x, y)
+        if not (contour[0][0] == 0 and contour[0][2] == 0 or contour[1][0] == 0 and contour[1][2] == 0):
+
+            cos_a = LineDetector._get_cos(last, contour[0], distances[0])
+            cos_b = LineDetector._get_cos(last, contour[1], distances[1])
+            edge_index = LineDetector._check_cos(cos_a, cos_b, has_last)
+            if edge_index != -1:
+                self.last_correct_edge = contour[edge_index]
+                return edge_index
 
         max_dist_index = np.argmax(distances)
         if abs(distances[0] - distances[1]) > 2 and abs(distances[2] - distances[3]) > 2:
             if distances[max_dist_index] > 6:
                 self.last_correct_edge = contour[max_dist_index]
-                print('by length')
                 return max_dist_index
-        print('by 50%')
-        self.last_correct_edge = contour[0]
-        return 0
+        cos_a = LineDetector._get_cos(last, contour[2], distances[2])
+        cos_b = LineDetector._get_cos(last, contour[3], distances[3])
 
-    def get_index_by_cos(self, a, b, d_a, d_b, last, inv=False):
-        D_E = 0.5
-        E = 0.05
-
-        cos_a = abs(self.get_cos(last, a, d_a))
-        cos_b = abs(self.get_cos(last, b, d_b))
-        print('last correct', last)
-        print('a', a)
-        print('b', b)
-        print('cos_a', cos_a)
-        print('cos_b', cos_b)
-        print('inv', inv)
-
-        if abs(cos_a - 1) <= E:
-            if not inv:
-                return 0
-            return 1
-        if abs(cos_b - 1) <= E:
-            if not inv:
-                return 1
-            return 0
-
-        if abs(cos_a - cos_b) > D_E:
-
-            if not inv:
-                return 0 if cos_a > cos_b else 1
-            else:
-                return 1 if cos_a > cos_b else 0
-
+        edge_index = LineDetector._check_cos(cos_a, cos_b, has_last)
+        if edge_index != -1:
+            # print('by third cos')
+            self.last_correct_edge = contour[edge_index]
+            return edge_index
+        # print('by random')
+        if not has_last:
+            edge_index = 0 if cos_a > cos_b else 1
         else:
-            return -1
+            edge_index = 1 if cos_a > cos_b else 0
+        self.last_correct_edge = contour[edge_index]
+        return edge_index
 
-    def get_cos(self, last, current, d_current):
-        d_last = self._dist_pixels((last[0], last[1]), (last[2], last[3]))
+    @staticmethod
+    def _get_degrees_from_cos(cos):
+        return np.degrees(np.arccos(cos))
+
+    @staticmethod
+    def _get_cos(last, current, dist_current):
+        dist_last = LineDetector._dist_pixels((last[0], last[1]), (last[2], last[3]))
         last = [last[0] - last[2], last[1] - last[3]]
         current = [current[0] - current[2], current[1] - current[3]]
         try:
-            return (last[0] * current[0] + last[1] * current[1]) / (d_last * d_current)
+            return abs((last[0] * current[0] + last[1] * current[1]) / (dist_last * dist_current))
         except ZeroDivisionError:
             return 1
 
     @staticmethod
-    def get_contour_by_piece(edge):
+    def _get_contour_by_piece(edge):
         if abs(edge[0] - edge[2]) <= 1 or abs(edge[1] - edge[3]) <= 1:
             return [edge]
         x_list = list(map(int, np.linspace(edge[0], edge[2], 3)))
         y_list = list(map(int, np.linspace(edge[1], edge[3], 3)))
-        el_contour = []
-        tmp = []
+        contour = []
+        current_piece = []
         for x, y in zip(x_list, y_list):
-            if tmp:
-                tmp.extend([x, y])
-                el_contour.append(tmp)
-            tmp = [x, y]
-        return el_contour
+            if current_piece:
+                current_piece.extend([x, y])
+                contour.append(current_piece)
+            current_piece = [x, y]
+        return contour
 
-    def create_contour_from_approx(self, approx):
-        el_0 = approx[0]
-        x1 = int(el_0[0][0])
-        y1 = int(el_0[0][1])
+    @staticmethod
+    def _create_edges_from_approx(approx):
+        vertex_0 = approx[0]
+        x_0 = int(vertex_0[0][0])
+        y_0 = int(vertex_0[0][1])
 
-        tmp = [x1, y1]
+        current_vertex = [x_0, y_0]
         contour = []
         distances = []
 
-        for el in approx[1:]:
-            x2 = int(el[0][0])
-            y2 = int(el[0][1])
+        for vertex in approx[1:]:
+            x_1 = int(vertex[0][0])
+            y_1 = int(vertex[0][1])
 
-            tmp.extend([x2, y2])
-            distances.append(self._dist_pixels(tmp[:2], tmp[2:]))
-            contour.append(tmp)
-            tmp = [x2, y2]
+            current_vertex.extend([x_1, y_1])
+            distances.append(LineDetector._dist_pixels(current_vertex[:2], current_vertex[2:]))
+            contour.append(current_vertex)
+            current_vertex = [x_1, y_1]
 
-        tmp.extend([x1, y1])
-        contour.append(tmp)
-        distances.append(self._dist_pixels(tmp[:2], tmp[2:]))
+        current_vertex.extend([x_0, y_0])
+        contour.append(current_vertex)
+        distances.append(LineDetector._dist_pixels(current_vertex[:2], current_vertex[2:]))
         return contour, distances
 
-    def sort_contours(self, contours):
+    @staticmethod
+    def _sort_contours(contours):
         return sorted(contours, key=functools.cmp_to_key(
-            lambda contour1, contour2: self._dist_pixels(contour1.center, contour2.center)), reverse=True)
+            lambda contour1, contour2: LineDetector._dist_pixels(contour1.center, contour2.center)), reverse=True)
 
-    def _detect_dash_line(self, img):
+    def detect_dash_line(self, img):
+
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
         ret, threshold_image = cv2.threshold(gray, 0, 255,
                                              cv2.THRESH_BINARY | cv2.THRESH_OTSU)
         contours, h = cv2.findContours(threshold_image, 1, 2)
         threshold_image = cv2.cvtColor(threshold_image, cv2.COLOR_GRAY2RGB)
         contours, threshold_image = self._filter_contours(contours, threshold_image)
-        contours = self.sort_contours(contours)
-        next_contour = False
-        ans_dash_line = []
         if not len(contours):
             return threshold_image, []
+        contours = LineDetector._sort_contours(contours)
+
+        next_contour = False
+        dash_lines = []
         prev_contour = contours[0]
 
-        # cv2.circle(threshold_image, (int(prev_contour.center[0]), int(prev_contour.center[1])), int(prev_contour.rad),
-        #            (255, 255, 0),
-        #            thickness=1)
-        # cv2.putText(threshold_image, str(0), (int(prev_contour.center[0]), int(prev_contour.center[1])),
-        #             cv2.FONT_HERSHEY_SIMPLEX, 0.42, (0, 8, 230), thickness=1)
         for i, contour in enumerate(contours[1:]):
-            max_dist = self.get_max_dist_between_elements(prev_contour.center[1])
-            # cv2.putText(threshold_image, str(i + 1), (int(contour.center[0]), int(contour.center[1])),
-            #             cv2.FONT_HERSHEY_SIMPLEX, 0.42, (0, 8, 230), thickness=1)
-            dist = self._dist_pixels(contour.center, prev_contour.center)
-            # cv2.circle(threshold_image, (int(contour.center[0]), int(contour.center[1])), int(contour.rad),
-            #            (255, 255, 0),
-            #            thickness=1)
-            if dist <= max_dist and not self.is_inside(contour, prev_contour):
-                ans_dash_line.append(prev_contour)
+
+            max_dist = LineDetector._get_max_dist_between_elements(prev_contour.center[1])
+            dist = LineDetector._dist_pixels(contour.center, prev_contour.center)
+            if dist <= max_dist and not LineDetector._is_inside(contour, prev_contour):
+                dash_lines.append(prev_contour)
                 next_contour = True
             else:
                 if next_contour:
-                    ans_dash_line.append(prev_contour)
+                    dash_lines.append(prev_contour)
                 next_contour = False
 
             prev_contour = contour
 
         if next_contour:
-            ans_dash_line.append(prev_contour)
-
-        return threshold_image, ans_dash_line
+            dash_lines.append(prev_contour)
+        return threshold_image, dash_lines
 
     @staticmethod
-    def is_inside(first_line, second_line):
-        if first_line.center == second_line.center and first_line.rad == second_line.rad:  # переопределить метод сравнения
+    def _is_inside(first_line, second_line):
+        if first_line == second_line:
             return False
-        big_cont = first_line if first_line.rad > second_line.rad else second_line
-        small_cont = first_line if first_line.rad < second_line.rad else second_line
+        big_cont = first_line if first_line > second_line else second_line
+        small_cont = first_line if first_line < second_line else second_line
         dist_between_cent = LineDetector._dist_pixels(first_line.center, second_line.center)
         if small_cont.rad + dist_between_cent < big_cont.rad:
             return True
         return False
-
-    @staticmethod
-    def is_cross(first_line, second_line):
-        dist_between_cent = LineDetector._dist_pixels(first_line.center, second_line.center)
-        e = 5  # зависимость от координат
-        if first_line.rad + second_line.rad < dist_between_cent + e:
-            return False
-        return True
-
-    @staticmethod
-    def _make_undistorted_image(img):
-        return cv2.undistort(img, CAMERA_MATRIX, DISTORTION_COEFFFICIENTS)
-
-    @staticmethod
-    def _sum(pix1, pix2):
-        return [pix1[0] + pix2[0], pix1[1] + pix2[1]]
 
     def setImage(self, image):
         """
@@ -506,174 +469,24 @@ class LineDetector(LineDetectorInterface):
         centers, normals = self.findNormal(map, lines)
         return Detections(lines=lines, normals=normals, map=map, centers=centers)
 
-    def formatted_answer(self, img):
-        # img = self._make_undistorted_image(img)
-
-        img, dashline = self._detect_dash_line(img)
-        result = []
-        lenvector = 6
-
-        for el in dashline:
-            min_el = self.Element([0, 0], 0, 0, 0,0)
-            for el2 in dashline:
-                if 1 < self._dist_pixels(el2.center, el.center) < self._dist_pixels(el.center, min_el.center):
-                    min_el = el2
-            vector = [min_el.center[0] - el.center[0], min_el.center[1] - el.center[1]]
-            len_line = sqrt(vector[0] ** 2 + vector[1] ** 2)
-
-            vector = [(vector[0] / len_line * lenvector), (vector[1] / len_line * lenvector)]
-
-            point1 = self._sum(el.center, vector)  # считаем концы линии элемента разметки
-            point2 = self._sum(el.center, [vector[0] * -1, vector[1] * -1])
-
-            normal = [vector[1] / lenvector,
-                      vector[0] / lenvector]  # считаем нормаль длины 1 (это вектор из начала координат)
-            result.append([point1, point2, normal])
-
-        for line in result:
-            cv2.line(img, (int(line[0][0]), int(line[0][1])), (int(line[1][0]), int(line[1][1])), (0, 255, 0), thickness=2)
-        return img
-
-    def detectYellowLines(self, img):
+    def detect_yellow_lines(self, img):
         """
         Detects the line segments in the currently set image that occur in and the edges of the regions of the image
         that are within the provided colour ranges.
 
         Args:
-            color_range (:py:class:`ColorRange`): A :py:class:`ColorRange` object specifying the desired colors.
+            img (:py:class:`numpy.ndarray`): A :py:class:`numpy.ndarray` object specifying the image from camera.
 
         Returns:
             :py:class:`Detections`: A :py:class:`Detections` object with the map of regions containing the desired colors, and the detected lines, together with their center points and normals,
         """
-        map_ = np.full((80, 160), 255, dtype=int)
-        _, lines = self._detect_dash_line(img)
-        contours = []
-        for line in lines:
-            contours.extend(line.approx)
-        if not contours:
-            return Detections(lines=contours, normals=[], map=map_, centers=[])
+        map_ = np.full(img.shape[:-1], 255, dtype=int)
+        debug_threshold_image, contours = self.detect_dash_line(img)
+        edges = self.get_edges_from_contours(img, contours)
 
-        contours = np.asarray(contours)
-        centers, normals = self.findNormal(map_, contours)
-        return Detections(lines=contours, normals=normals, map=map_, centers=centers)
+        if not edges:
+            return Detections(lines=edges, normals=[], map=map_, centers=[])
 
-'''[array([[[10, 73]],
-
-       [[11, 78]],
-
-       [[15, 79]]], dtype=int32), array([[[22, 57]],
-
-       [[14, 66]],
-
-       [[18, 72]],
-
-       [[27, 60]]], dtype=int32), array([[[41, 43]],
-
-       [[36, 42]],
-
-       [[28, 51]],
-
-       [[33, 53]]], dtype=int32), array([[[52, 32]],
-
-       [[46, 32]],
-
-       [[41, 37]],
-
-       [[46, 38]]], dtype=int32), array([[[51, 28]],
-
-       [[55, 28]],
-
-       [[59, 25]],
-
-       [[54, 25]]], dtype=int32)]
-'''
-
-
-'''
-lines =  [[86 10 86  4]] normals =  [[ 1. -0.]] map =  [[0 0 0 ... 0 0 0]
- [0 0 0 ... 0 0 0]
- [0 0 0 ... 0 0 0]
- ...
- [0 0 0 ... 0 0 0]
- [0 0 0 ... 0 0 0]
- [0 0 0 ... 0 0 0]] centers =  [[86.  7.]]
-lines =  [[ 7 14 17 13]
- [18 12 22 12]
- [ 4 21  4 15]
- [31 10 39 10]
- [ 5 26  6 29]
- [24  1 28  3]][autobot01/stop_line_filter_node-8] killing on exit
-[autobot01/lane_filter_node-7] killing on exit
-[INFO] [1646920190.060340]: [/autobot01/stop_line_filter_node] Received shutdown request.
-[INFO] [1646920190.067721]: [/autobot01/lane_filter_node] Received shutdown request.
- normals =  [[ 0.09950372  0.99503719]
- [-0.          1.        ]
- [ 1.         -0.        ]
- [ 0.         -1.        ]
- [-0.9486833   0.31622777]
- [-0.4472136   0.89442719]] map =  [[255 255 255 ... 255 255 255]
- [255 255 255 ... 255 255 255]
- [255 255 255 ... 255 255 255]
- ...
- [  0   0   0 ...   0   0   0]
- [  0   0   0 ...   0   0   0]
- [  0   0   0 ...   0   0   0]][autobot01/ground_projection_node-6] killing on exit
- centers =  [[12.  13.5]
- [20.  12. ]
- [ 4.  18. ]
- [35.  10. ]
- [ 5.5 27.5]
- [26.   2. ]]
-[INFO] [1646920190.105539]: [/autobot01/ground_projection_node] Received shutdown request.
-[autobot01/line_detector_node-5] killing on exit
-lines =  [] normals =  [] map =  [[0 0 0 ... 0 0 0]
- [0 0 0 ... 0 0 0]
- [0 0 0 ... 0 0 0]
- ...
- [0 0 0 ... 0 0 0]
- [0 0 0 ... 0 0 0]
- [0 0 0 ... 0 0 0]] centers =  []
-{'RED': <custom_line_detector.detections.Detections object at 0xa71ae538>, 'WHITE': <custom_line_detector.detections.Detections object at 0xa71ae7c0>, 'YELLOW': <custom_line_detector.detections.Detections object at 0xa71ae250>}
-[INFO] [1646920190.133156]: [/autobot01/line_detector_node] Received shutdown request.
-lines =  [[86 10 86  4]] normals =  [[ 1. -0.]] map =  [[0 0 0 ... 0 0 0]
- [0 0 0 ... 0 0 0]
- [0 0 0 ... 0 0 0]
- ...
- [0 0 0 ... 0 0 0]
- [0 0 0 ... 0 0 0]
- [0 0 0 ... 0 0 0]] centers =  [[86.  7.]]
-lines =  [[35 10 41 10]
- [ 4 21  4 15]
- [10 14 15 13]
- [ 5 26  5 22]
- [ 1 55  4 62]
- [25 11 29 11]
- [22 12 24  9]] normals =  [[ 0.         -1.        ]
- [ 1.         -0.        ]
- [ 0.19611614  0.98058068]
- [ 1.         -0.        ]
- [-0.91914503  0.3939193 ]
- [-0.          1.        ]
- [ 0.83205029  0.5547002 ]] map =  [[255 255 255 ... 255 255 255]
- [255 255 255 ... 255 255 255]
- [255 255 255 ... 255 255 255]
- ...
- [  0   0   0 ...   0   0   0]
- [  0   0   0 ...   0   0   0]
- [  0   0   0 ...   0   0   0]] centers =  [[38.  10. ]
- [ 4.  18. ]
- [12.5 13.5]
- [ 5.  24. ]
- [ 2.5 58.5]
- [27.  11. ]
- [23.  10.5]]
-lines =  [] normals =  [] map =  [[0 0 0 ... 0 0 0]
- [0 0 0 ... 0 0 0]
- [0 0 0 ... 0 0 0]
- ...
- [0 0 0 ... 0 0 0]
- [0 0 0 ... 0 0 0]
- [0 0 0 ... 0 0 0]] centers =  []
-{'RED': <custom_line_detector.detections.Detections object at 0xa71ae538>, 'WHITE': <custom_line_detector.detections.Detections object at 0xa71ae778>, 'YELLOW': <custom_line_detector.detections.Detections object at 0xa71ae1a8>}
-
-'''
+        edges = np.asarray(edges)
+        centers, normals = self.findNormal(map_, edges)
+        return Detections(lines=edges, normals=normals, map=map_, centers=centers)
