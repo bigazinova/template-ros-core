@@ -4,6 +4,7 @@ import rospy
 from duckietown.dtros import DTROS, NodeType
 from duckietown_msgs.msg import Twist2DStamped
 from sensor_msgs.msg import CompressedImage
+from cv_bridge import CvBridge
 
 class MyNode(DTROS):
 
