@@ -3,13 +3,20 @@ import sys
 import rospy
 from duckietown.dtros import DTROS, NodeType
 from duckietown_msgs.msg import Twist2DStamped
+from sensor_msgs.msg import CompressedImage
 
 class MyNode(DTROS):
 
     def __init__(self, node_name):
         super(MyNode, self).__init__(node_name=node_name, node_type=NodeType.DEBUG)
         self.pub = rospy.Publisher("~car_cmd", Twist2DStamped, queue_size=1)
+        self.img_sub = rospy.Subscriber("~image", CompressedImage, self.clb)
+        self.bridge = CvBridge()
 
+    def clb(self, img):
+        image = self.bridge.compressed_imgmsg_to_cv2(img)
+        print(image)
+    
     def run(self):
         # publish message every 1 second
         rate = rospy.Rate(1) # 1Hz
