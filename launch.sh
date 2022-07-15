@@ -12,6 +12,6 @@ roslaunch duckietown_demos lane_following.launch
 
 #roslaunch --wait circle_drive indefinite_navigation2.launch &
 
-sleep 5
+sleep 15
 #we put a short sleep in here because rostopic will fail if there's no roscore yet
 rostopic pub /$VEHICLE_NAME/fsm_node/mode duckietown_msgs/FSMState '{header: {}, state: "LANE_FOLLOWING"}'
