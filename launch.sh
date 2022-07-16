@@ -15,3 +15,13 @@ roslaunch --wait duckietown_demos lane_following.launch &
 sleep 30
 #we put a short sleep in here because rostopic will fail if there's no roscore yet
 rostopic pub /$VEHICLE_NAME/fsm_node/mode duckietown_msgs/FSMState '{header: {}, state: "LANE_FOLLOWING"}'
+
+sleep 40
+
+rostopic pub /$VEHICLE_NAME/fsm_node/mode duckietown_msgs/FSMState '{header: {}, state: "NORMAL_JOYSTICK_CONTROL"}' 
+
+rostopic pub -r 30 /{hostname}/joy sensor_msgs/Joy '{header:{},axes:[0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0],buttons:[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]}' &
+
+sleep 5
+
+exit
