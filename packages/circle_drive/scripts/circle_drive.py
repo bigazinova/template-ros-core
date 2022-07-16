@@ -25,6 +25,17 @@ class MyNode(DTROS):
             self.pub.publish(msg)
             rate.sleep()
             sys.stdout.flush()
+            
+    def on_shutdown(self):
+        """Shutdown procedure.
+
+        Publishes a zero velocity command at shutdown."""
+        msg = Twist2DStamped()
+        msg.v = 0.0
+        msg.omega = 0.0
+        self.pub.publish(msg)
+
+        super(MyNode, self).on_shutdown()
 
 if __name__ == '__main__':
     # create the node
