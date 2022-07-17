@@ -11,31 +11,10 @@ class MyNode(DTROS):
         self.pub = rospy.Publisher("~car_cmd", Twist2DStamped, queue_size=1)
 
     def run(self):
-        # publish message every 1 second
-        rate = rospy.Rate(1) # 1Hz
-        while not rospy.is_shutdown():
-            msg = Twist2DStamped()
-            msg.v = 0.0
-            msg.omega = 1.0
-            rospy.loginfo("Publishing message 0/0.5")
-            self.pub.publish(msg)
-            rate.sleep()
-            msg.omega = 0.0
-            rospy.loginfo("Publishing message 0/0.0")
-            self.pub.publish(msg)
-            rate.sleep()
-            sys.stdout.flush()
+        pass
             
     def on_shutdown(self):
-        """Shutdown procedure.
-
-        Publishes a zero velocity command at shutdown."""
-        msg = Twist2DStamped()
-        msg.v = 0.0
-        msg.omega = 0.0
-        self.pub.publish(msg)
-
-        super(MyNode, self).on_shutdown()
+        pass
 
 if __name__ == '__main__':
     # create the node
