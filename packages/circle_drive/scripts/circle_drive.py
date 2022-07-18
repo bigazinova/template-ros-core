@@ -20,7 +20,7 @@ class MyNode(DTROS):
             sleep(1)
             msg.omega = 0
             self.pub.publish(msg)
-            #sleep(1)
+            sleep(1)
 
             
             
