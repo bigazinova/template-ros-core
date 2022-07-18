@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 import sys
 import rospy
+from time import sleep
 from duckietown.dtros import DTROS, NodeType
-from duckietown_msgs.msg import Twist2DStamped
+from duckietown_msgs.msg import Twist2DStamped # v w
 
 class MyNode(DTROS):
 
@@ -11,10 +12,24 @@ class MyNode(DTROS):
         self.pub = rospy.Publisher("~car_cmd", Twist2DStamped, queue_size=1)
 
     def run(self):
-        pass
+        msg = Twist2DStamped()
+        # rate = rospy.Rate(1)
+        while not rospy.is_shutdown():
+            msg.omega = 1
+            self.pub.publish(msg)
+            sleep(1)
+            msg.omega = 0
+            self.pub.publish(msg)
+            #sleep(1)
+
+            
+            
             
     def on_shutdown(self):
-        pass
+        msg = Twist2DStamped()
+        msg.v = 0
+        msg.omega = 0
+        self.pub.publish(msg)
 
 if __name__ == '__main__':
     # create the node
