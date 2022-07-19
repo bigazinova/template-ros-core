@@ -31,6 +31,7 @@ class MyNode(DTROS):
             image = self.bridge.compressed_imgmsg_to_cv2(image_msg)
             self.cur_img = image
             
+            
         except ValueError as e:
             self.logerr('Could not decode image: %s' % e)
             return
